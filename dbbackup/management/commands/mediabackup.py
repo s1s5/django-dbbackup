@@ -95,4 +95,4 @@ class Command(BaseDbBackupCommand):
         if self.path is None:
             self.write_to_storage(tarball, filename)
         else:
-            self.storage.write_file(tarball, filename)
+            self.storage.write_file(tarball, self.path)
