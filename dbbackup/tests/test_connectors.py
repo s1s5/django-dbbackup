@@ -1,3 +1,6 @@
+from __future__ import unicode_literals
+
+import os
 from mock import patch, mock_open
 from tempfile import SpooledTemporaryFile
 
@@ -10,6 +13,7 @@ from dbbackup.db.sqlite import SqliteConnector, SqliteCPConnector
 from dbbackup.db.mysql import MysqlDumpConnector
 from dbbackup.db.postgresql import PgDumpConnector, PgDumpGisConnector
 from dbbackup.db.mongodb import MongoDumpConnector
+from dbbackup.tests.testapp.models import CharModel
 
 
 class GetConnectorTest(TestCase):
@@ -57,6 +61,30 @@ class BaseCommandDBConnectorTest(TestCase):
         connector = BaseCommandDBConnector()
         # Empty env
         stdout, stderr = connector.run_command('env')
+        self.assertTrue(stdout.read())
+        # env from self.env
+        connector.env = {'foo': 'bar'}
+        stdout, stderr = connector.run_command('env')
+        self.assertIn(b'foo=bar\n', stdout.read())
+        # method overide gloabal env
+        stdout, stderr = connector.run_command('env', env={'foo': 'ham'})
+        self.assertIn(b'foo=ham\n', stdout.read())
+        # get a var from parent env
+        os.environ['bar'] = 'foo'
+        stdout, stderr = connector.run_command('env')
+        self.assertIn(b'bar=foo\n', stdout.read())
+        # Conf overides parendt env
+        connector.env = {'bar': 'bar'}
+        stdout, stderr = connector.run_command('env')
+        self.assertIn(b'bar=bar\n', stdout.read())
+        # method overides all
+        stdout, stderr = connector.run_command('env', env={'bar': 'ham'})
+        self.assertIn(b'bar=ham\n', stdout.read())
+
+    def test_run_command_with_parent_env(self):
+        connector = BaseCommandDBConnector(use_parent_env=False)
+        # Empty env
+        stdout, stderr = connector.run_command('env')
         self.assertFalse(stdout.read())
         # env from self.env
         connector.env = {'foo': 'bar'}
@@ -65,6 +93,10 @@ class BaseCommandDBConnectorTest(TestCase):
         # method overide gloabal env
         stdout, stderr = connector.run_command('env', env={'foo': 'ham'})
         self.assertEqual(stdout.read(), b'foo=ham\n')
+        # no var from parent env
+        os.environ['bar'] = 'foo'
+        stdout, stderr = connector.run_command('env')
+        self.assertNotIn(b'bar=foo\n', stdout.read())
 
 
 class SqliteConnectorTest(TestCase):
@@ -77,6 +109,12 @@ class SqliteConnectorTest(TestCase):
             self.assertTrue(line.strip().endswith(b';'))
 
     def test_create_dump(self):
+        connector = SqliteConnector()
+        dump = connector.create_dump()
+        self.assertTrue(dump.read())
+
+    def test_create_dump_with_unicode(self):
+        CharModel.objects.create(field='\xe9')
         connector = SqliteConnector()
         dump = connector.create_dump()
         self.assertTrue(dump.read())
@@ -281,11 +319,11 @@ class PgDumpConnectorTest(TestCase):
         # Without
         connector.settings.pop('USER', None)
         connector.create_dump()
-        self.assertNotIn(' --user=', mock_dump_cmd.call_args[0][0])
+        self.assertNotIn(' --username=', mock_dump_cmd.call_args[0][0])
         # With
         connector.settings['USER'] = 'foo'
         connector.create_dump()
-        self.assertIn(' --user=foo', mock_dump_cmd.call_args[0][0])
+        self.assertIn(' --username=foo', mock_dump_cmd.call_args[0][0])
 
     def test_create_dump_exclude(self, mock_dump_cmd):
         connector = PgDumpConnector()
@@ -358,11 +396,11 @@ class PgDumpConnectorTest(TestCase):
         # Without
         connector.settings.pop('USER', None)
         connector.restore_dump(dump)
-        self.assertNotIn(' --user=', mock_restore_cmd.call_args[0][0])
+        self.assertNotIn(' --username=', mock_restore_cmd.call_args[0][0])
         # With
         connector.settings['USER'] = 'foo'
         connector.restore_dump(dump)
-        self.assertIn(' --user=foo', mock_restore_cmd.call_args[0][0])
+        self.assertIn(' --username=foo', mock_restore_cmd.call_args[0][0])
 
 
 @patch('dbbackup.db.postgresql.PgDumpGisConnector.run_command',
@@ -387,7 +425,7 @@ class PgDumpGisConnectorTest(TestCase):
         connector.settings['ADMIN_USER'] = 'foo'
         connector._enable_postgis()
         self.assertIn('"CREATE EXTENSION IF NOT EXISTS postgis;"', mock_dump_cmd.call_args[0][0])
-        self.assertIn('--user=foo', mock_dump_cmd.call_args[0][0])
+        self.assertIn('--username=foo', mock_dump_cmd.call_args[0][0])
 
     def test_enable_postgis_host(self, mock_dump_cmd):
         connector = PgDumpGisConnector()
@@ -429,17 +467,18 @@ class PgDumpConnectorRunCommandTest(TestCase):
         connector.settings['PASSWORD'] = 'foo'
         connector.create_dump()
         self.assertEqual(mock_popen.call_args[0][0][0], 'pg_dump')
-        self.assertEqual(mock_popen.call_args[1]['env'], {'PGPASSWORD': 'foo'})
+        self.assertIn('PGPASSWORD', mock_popen.call_args[1]['env'])
+        self.assertEqual('foo', mock_popen.call_args[1]['env']['PGPASSWORD'])
 
     def test_run_command_with_password_and_other(self, mock_popen):
         connector = PgDumpConnector(env={'foo': 'bar'})
         connector.settings['PASSWORD'] = 'foo'
         connector.create_dump()
         self.assertEqual(mock_popen.call_args[0][0][0], 'pg_dump')
-        self.assertEqual(mock_popen.call_args[1]['env'], {
-            'foo': 'bar',
-            'PGPASSWORD': 'foo'
-        })
+        self.assertIn('foo', mock_popen.call_args[1]['env'])
+        self.assertEqual('bar', mock_popen.call_args[1]['env']['foo'])
+        self.assertIn('PGPASSWORD', mock_popen.call_args[1]['env'])
+        self.assertEqual('foo', mock_popen.call_args[1]['env']['PGPASSWORD'])
 
 
 @patch('dbbackup.db.mongodb.MongoDumpConnector.run_command',

@@ -58,7 +58,7 @@ EXTENSION
 Extension of backup file name, default ``'dump'``.
 
 Command connectors
-~~~~~~~~~~~~~~~~~~
+------------------
 
 Some connectors use command line tools as dump engine, ``mysqldump`` for
 example. This kind of tools has common attributes:
@@ -95,6 +95,12 @@ ENV, DUMP_ENV and RESTORE_ENV
 Environment variables used during command running, default are ``{}``. ``ENV``
 is used for every command, ``DUMP_ENV`` and ``RESTORE_ENV``  override the
 values defined in ``ENV`` during the dedicated commands.
+
+USE_PARENT_ENV
+~~~~~~~~~~~~~~
+
+Specify if the connector will use its parent's environment variables. By
+default it is ``True`` to keep ``PATH``.
 
 SQLite
 ------
@@ -196,3 +202,16 @@ Create your connector is easy, create a children class from
 :class:`dbbackup.db.base.BaseDBConnector` and create ``create_dump`` and
 ``restore_dump``.  If your connector uses a command line tool heritate from
 :class:`dbbackup.db.base.BaseCommandDBConnector`
+
+Connecting a Custom connector
+-----------------------------
+
+Here is an example, on how to easily connect a custom connector that you have created or even that you simply want to reuse: ::
+
+    DBBACKUP_CONNECTOR_MAPPING = {
+        'transaction_hooks.backends.postgis': 'dbbackup.db.postgresql.PgDumpGisConnector',
+    }
+
+Obviously instead of :class:`dbbackup.db.postgresql.PgDumpGisConnector` you can
+use the custom connector you have created yourself and ``transaction_hooks.backends.postgis``
+is simply the database engine name you are using.

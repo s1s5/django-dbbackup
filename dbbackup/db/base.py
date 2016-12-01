@@ -1,6 +1,7 @@
 """
 Base database connectors
 """
+import os
 import shlex
 from tempfile import SpooledTemporaryFile
 from subprocess import Popen
@@ -20,6 +21,9 @@ CONNECTOR_MAPPING = {
     'django.contrib.gis.db.backends.oracle': None,
     'django.contrib.gis.db.backends.spatialite': 'dbbackup.db.sqlite.SqliteConnector',
 }
+
+if settings.CUSTOM_CONNECTOR_MAPPING:
+    CONNECTOR_MAPPING.update(settings.CUSTOM_CONNECTOR_MAPPING)
 
 
 def get_connector(database_name=None):
@@ -109,6 +113,8 @@ class BaseCommandDBConnector(BaseDBConnector):
     dump_suffix = ''
     restore_prefix = ''
     restore_suffix = ''
+
+    use_parent_env = True
     env = {}
     dump_env = {}
     restore_env = {}
@@ -131,7 +137,8 @@ class BaseCommandDBConnector(BaseDBConnector):
                                       dir=settings.TMP_DIR)
         stderr = SpooledTemporaryFile(max_size=settings.TMP_FILE_MAX_SIZE,
                                       dir=settings.TMP_DIR)
-        full_env = self.env.copy()
+        full_env = os.environ.copy() if self.use_parent_env else {}
+        full_env.update(self.env)
         full_env.update(env or {})
         try:
             process = Popen(cmd, stdin=stdin, stdout=stdout, stderr=stderr,
